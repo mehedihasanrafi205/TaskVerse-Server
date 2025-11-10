@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -30,7 +30,7 @@ async function run() {
     const jobColl = db.collection("jobs");
 
     app.get("/allJobs", async (req, res) => {
-      const result = await jobColl.find().toArray();
+      const result = await jobColl.find().sort({ created_at: -1 }).toArray();
       res.send(result);
     });
 
@@ -41,6 +41,35 @@ async function run() {
         .limit(6)
         .toArray();
 
+      res.send(result);
+    });
+
+    app.get("/allJobs/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await jobColl.findOne(query);
+      res.send(result);
+    });
+
+    app.post("/addJob", async (req, res) => {
+      const data = req.body;
+      const result = await jobColl.insertOne(data);
+      res.send(result);
+    });
+    app.put("/updateJob/:id", async (req, res) => {
+      const id = req.params.id;
+      const data = req.body;
+      const query = { _id: new ObjectId(id) };
+      const update = {
+        $set: data,
+      };
+      const result = await jobColl.updateOne(query, update);
+      res.send(result);
+    });
+    app.delete("/deleteJob/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      result = await jobColl.deleteOne(query);
       res.send(result);
     });
 
