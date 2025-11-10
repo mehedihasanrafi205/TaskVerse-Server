@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const admin = require("firebase-admin");
+const serviceAccount = require("./taskverse-firebase-admins.key.json");
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
@@ -7,6 +9,25 @@ const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
+const verifyFBToken = async (req, res, next) => {
+  const authorization = req.headers.authorization;
+  if (!authorization) {
+    return res.status(401).send({ message: "Unauthorized Access. Token not found" });
+  }
+  const token = authorization.split(" ")[1];
+
+  try {
+    await admin.auth().verifyIdToken(token);
+    next();
+  } catch (error) {
+    res.status(401).send({ message: "Unauthorized Access" });
+  }
+};
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@desmondhart.tz893ku.mongodb.net/?appName=Desmondhart`;
 
@@ -44,7 +65,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/allJobs/:id", async (req, res) => {
+    app.get("/allJobs/:id", verifyFBToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await jobColl.findOne(query);

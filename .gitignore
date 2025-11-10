@@ -1,3 +1,4 @@
 node_modules
 .env
 .vercel
+taskverse-firebase-admins.key.json
