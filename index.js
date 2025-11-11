@@ -51,6 +51,7 @@ async function run() {
 
     const db = client.db("TaskVerseDB");
     const jobColl = db.collection("jobs");
+    const acceptedTasksColl = db.collection("accepted-tasks");
 
     app.get("/allJobs", async (req, res) => {
       const result = await jobColl.find().sort({ created_at: -1 }).toArray();
@@ -76,8 +77,11 @@ async function run() {
 
     app.get("/myAddedJobs", verifyFBToken, async (req, res) => {
       const email = req.query.email;
-      const result = await jobColl.find({ postedByEmail: email }).toArray()
-      res.send(result)
+      const result = await jobColl
+        .find({ postedByEmail: email })
+        .sort({ created_at: -1 })
+        .toArray();
+      res.send(result);
     });
 
     app.post("/addJob", async (req, res) => {
@@ -99,6 +103,29 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       result = await jobColl.deleteOne(query);
+      res.send(result);
+    });
+
+    app.get("/my-accepted-tasks", verifyFBToken, async (req, res) => {
+      const email = req.query.email;
+      const result = await acceptedTasksColl
+        .find({ userEmail: email })
+        .sort({ accepted_at: -1 })
+        .toArray();
+      res.send(result);
+    });
+
+    app.post("/my-accepted-tasks", verifyFBToken, async (req, res) => {
+      const data = req.body;
+      delete data._id;
+      const result = await acceptedTasksColl.insertOne(data);
+      res.send(result);
+    });
+
+    app.delete("/my-accepted-tasks/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      result = await acceptedTasksColl.deleteOne(query);
       res.send(result);
     });
 
