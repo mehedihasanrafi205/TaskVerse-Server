@@ -61,7 +61,7 @@ async function run() {
     const acceptedTasksColl = db.collection("accepted-tasks");
 
     app.get("/allJobs", async (req, res) => {
-      const result = await jobColl.find().sort({ created_at: -1 }).toArray();
+      const result = await jobColl.find().toArray();
       res.send(result);
     });
 
@@ -84,6 +84,7 @@ async function run() {
 
     app.get("/myAddedJobs", verifyFBToken, async (req, res) => {
       const email = req.query.email;
+      console.log(req.query);
       const result = await jobColl
         .find({ postedByEmail: email })
         .sort({ created_at: -1 })
@@ -133,6 +134,16 @@ async function run() {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       result = await acceptedTasksColl.deleteOne(query);
+      res.send(result);
+    });
+
+    app.get("/sort-by-date/jobs", async (req, res) => {
+      const sort = req.query.sort;
+
+      let sortQuery = {};
+      if (sort === "newest") sortQuery = { created_at: -1 };
+      else if (sort === "oldest") sortQuery = { created_at: 1 };
+      result = await jobColl.aggregate([{ $sort: sortQuery }]).toArray();
       res.send(result);
     });
 
