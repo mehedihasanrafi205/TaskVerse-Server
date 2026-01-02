@@ -1,13 +1,12 @@
 const express = require("express");
 const cors = require("cors");
 const admin = require("firebase-admin");
-
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
-// index.js
+// Firebase Setup
 const decoded = Buffer.from(
   process.env.FIREBASE_SERVICE_KEY,
   "base64"
@@ -18,9 +17,11 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
+// Auth Middleware
 const verifyFBToken = async (req, res, next) => {
   const authorization = req.headers.authorization;
   if (!authorization) {
@@ -60,9 +61,63 @@ async function run() {
     const jobColl = db.collection("jobs");
     const acceptedTasksColl = db.collection("accepted-tasks");
 
+    // ---------------------------------------------------------
+    // Job Management APIs (Search, Filter, Sort, Pagination)
+    // ---------------------------------------------------------
+
     app.get("/allJobs", async (req, res) => {
-      const result = await jobColl.find().toArray();
-      res.send(result);
+      try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 12;
+        const search = req.query.search || "";
+        const sort = req.query.sort || "newest"; // newest, oldest, price_asc, price_desc
+        const category = req.query.category || "";
+        const minPrice = parseFloat(req.query.minPrice);
+        const maxPrice = parseFloat(req.query.maxPrice);
+
+        const skip = (page - 1) * limit;
+
+        // Query Construction
+        const query = {
+          $or: [
+            { title: { $regex: search, $options: "i" } },
+            { description: { $regex: search, $options: "i" } },
+          ],
+        };
+
+        if (category) {
+          query.category = category;
+        }
+
+        if (!isNaN(minPrice) && !isNaN(maxPrice)) {
+          query.price = { $gte: minPrice, $lte: maxPrice };
+        } else if (!isNaN(minPrice)) {
+          query.price = { $gte: minPrice };
+        } else if (!isNaN(maxPrice)) {
+          query.price = { $lte: maxPrice };
+        }
+
+        // Sorting Logic
+        let sortQuery = {};
+        if (sort === "newest") sortQuery = { created_at: -1 };
+        else if (sort === "oldest") sortQuery = { created_at: 1 };
+        else if (sort === "price_asc") sortQuery = { price: 1 };
+        else if (sort === "price_desc") sortQuery = { price: -1 };
+
+        const result = await jobColl
+          .find(query)
+          .sort(sortQuery)
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        const totalCount = await jobColl.countDocuments(query);
+
+        res.send({ jobs: result, totalCount });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Error fetching jobs" });
+      }
     });
 
     app.get("/latestJobs", async (req, res) => {
@@ -84,7 +139,6 @@ async function run() {
 
     app.get("/myAddedJobs", verifyFBToken, async (req, res) => {
       const email = req.query.email;
-      console.log(req.query);
       const result = await jobColl
         .find({ postedByEmail: email })
         .sort({ created_at: -1 })
@@ -97,6 +151,7 @@ async function run() {
       const result = await jobColl.insertOne(data);
       res.send(result);
     });
+
     app.put("/updateJob/:id", verifyFBToken, async (req, res) => {
       const id = req.params.id;
       const data = req.body;
@@ -107,12 +162,17 @@ async function run() {
       const result = await jobColl.updateOne(query, update);
       res.send(result);
     });
+
     app.delete("/deleteJob/:id", verifyFBToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       result = await jobColl.deleteOne(query);
       res.send(result);
     });
+
+    // ---------------------------------------------------------
+    // Accepted Tasks / Bids APIs
+    // ---------------------------------------------------------
 
     app.get("/my-accepted-tasks", verifyFBToken, async (req, res) => {
       const email = req.query.email;
@@ -137,14 +197,32 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/sort-by-date/jobs", async (req, res) => {
-      const sort = req.query.sort;
+    // ---------------------------------------------------------
+    // Dashboard Stats API
+    // ---------------------------------------------------------
 
-      let sortQuery = {};
-      if (sort === "newest") sortQuery = { created_at: -1 };
-      else if (sort === "oldest") sortQuery = { created_at: 1 };
-      result = await jobColl.aggregate([{ $sort: sortQuery }]).toArray();
-      res.send(result);
+    app.get("/stats", verifyFBToken, async (req, res) => {
+      try {
+        const email = req.query.email;
+        
+        // Parallel execution for performance
+        const [postedJobsCount, acceptedTasksCount, totalJobsCount] = await Promise.all([
+          jobColl.countDocuments({ postedByEmail: email }),
+          acceptedTasksColl.countDocuments({ userEmail: email }),
+          jobColl.estimatedDocumentCount()
+        ]);
+
+        res.send({
+          postedJobs: postedJobsCount,
+          acceptedTasks: acceptedTasksCount, 
+          totalPlatformJobs: totalJobsCount,
+          pendingBids: 0 
+        });
+
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Error fetching stats" });
+      }
     });
 
     // await client.db("admin").command({ ping: 1 });
